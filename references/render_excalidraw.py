@@ -163,6 +163,15 @@ def render(
             browser.close()
             sys.exit(1)
 
+        # Resize viewport to fit the actual rendered SVG dimensions.
+        # The template's viewBox expansion ensures content isn't clipped;
+        # this resize ensures the screenshot matches the SVG's final size.
+        svg_box = svg_el.bounding_box()
+        if svg_box:
+            fit_w = int(svg_box["width"])
+            fit_h = int(svg_box["height"])
+            page.set_viewport_size({"width": fit_w, "height": fit_h})
+
         svg_el.screenshot(path=str(output_path))
         browser.close()
 

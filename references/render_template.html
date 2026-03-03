@@ -35,10 +35,66 @@
           files: files,
         });
 
-        // Clear any previous render
+        // Excalidraw computes the SVG viewBox from stored element dimensions,
+        // but text renders at its natural font-metric width which can exceed
+        // the stored width. Set overflow="visible" temporarily so text renders
+        // beyond the viewBox, then measure actual bounds and expand to fit.
+        svg.setAttribute("overflow", "visible");
+
         const root = document.getElementById("root");
         root.innerHTML = "";
         root.appendChild(svg);
+
+        // Wait for @font-face fonts (embedded in SVG defs) to load.
+        // Without this, getBoundingClientRect() uses fallback font metrics
+        // which are narrower than the actual rendered glyphs, causing the
+        // viewBox expansion to miss the real content extent.
+        await document.fonts.ready;
+
+        // Measure actual rendered content bounds after fonts are loaded.
+        const ctm = svg.getScreenCTM();
+        const vbAttr = svg.getAttribute("viewBox");
+        if (ctm && vbAttr) {
+          const [origVx, origVy, origVw, origVh] = vbAttr.split(" ").map(Number);
+          const invCTM = ctm.inverse();
+
+          // Scan all descendant elements for the actual rendered extent.
+          let pxMinX = Infinity, pxMinY = Infinity;
+          let pxMaxX = -Infinity, pxMaxY = -Infinity;
+          for (const el of svg.querySelectorAll("*")) {
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 && rect.height === 0) continue;
+            pxMinX = Math.min(pxMinX, rect.left);
+            pxMinY = Math.min(pxMinY, rect.top);
+            pxMaxX = Math.max(pxMaxX, rect.right);
+            pxMaxY = Math.max(pxMaxY, rect.bottom);
+          }
+
+          if (pxMinX !== Infinity) {
+            // Convert pixel bounds to SVG coordinate space.
+            const svgMin = new DOMPoint(pxMinX, pxMinY).matrixTransform(invCTM);
+            const svgMax = new DOMPoint(pxMaxX, pxMaxY).matrixTransform(invCTM);
+
+            // Expand viewBox to contain all actual content + padding.
+            const pad = 40;
+            const newVx = Math.min(origVx, svgMin.x) - pad;
+            const newVy = Math.min(origVy, svgMin.y) - pad;
+            const newMaxX = Math.max(origVx + origVw, svgMax.x) + pad;
+            const newMaxY = Math.max(origVy + origVh, svgMax.y) + pad;
+            const newVw = newMaxX - newVx;
+            const newVh = newMaxY - newVy;
+
+            // Scale width/height proportionally.
+            const origW = parseFloat(svg.getAttribute("width"));
+            const pxPerUnit = origW / origVw;
+            svg.setAttribute("viewBox", `${newVx} ${newVy} ${newVw} ${newVh}`);
+            svg.setAttribute("width", newVw * pxPerUnit);
+            svg.setAttribute("height", newVh * pxPerUnit);
+          }
+        }
+
+        // ViewBox now contains all rendered content; restore default overflow.
+        svg.removeAttribute("overflow");
 
         window.__renderComplete = true;
         window.__renderError = null;
