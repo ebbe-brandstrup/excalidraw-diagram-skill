@@ -127,6 +127,103 @@
         anyCorrections = true;
       }
 
+      // --- Phase 1.5: Recalculate arrow endpoints for expanded containers ---
+      // Arrows bound to expanded containers still have their old endpoint positions.
+      // Recalculate so they connect to the new container edges.
+
+      if (anyCorrections) {
+        // Build set of expanded container IDs for quick lookup.
+        const expandedIds = new Set();
+        for (const el of elements) {
+          if (el.isDeleted || !["rectangle", "diamond", "ellipse"].includes(el.type)) continue;
+          const ob = originalBounds.get(el.id);
+          if (!ob) continue;
+          if (el.width !== ob.width || el.height !== ob.height || el.x !== ob.x || el.y !== ob.y) {
+            expandedIds.add(el.id);
+          }
+        }
+
+        for (const arrow of elements) {
+          if (arrow.isDeleted || arrow.type !== "arrow") continue;
+          if (!arrow.points || arrow.points.length < 2) continue;
+
+          const startBound = arrow.startBinding;
+          const endBound = arrow.endBinding;
+
+          // Adjust start point if bound to an expanded container.
+          if (startBound && expandedIds.has(startBound.elementId)) {
+            const container = byId.get(startBound.elementId);
+            const ob = originalBounds.get(startBound.elementId);
+            if (container && ob) {
+              const oldCx = ob.x + ob.width / 2;
+              const oldCy = ob.y + ob.height / 2;
+              // Arrow start absolute position.
+              const startX = arrow.x + arrow.points[0][0];
+              const startY = arrow.y + arrow.points[0][1];
+              // Vector from old center to old start point.
+              const dx = startX - oldCx;
+              const dy = startY - oldCy;
+              // Scale by ratio of new to old dimensions.
+              const scaleX = ob.width > 0 ? container.width / ob.width : 1;
+              const scaleY = ob.height > 0 ? container.height / ob.height : 1;
+              // New center is same (center-preserving expansion).
+              const newStartX = oldCx + dx * scaleX;
+              const newStartY = oldCy + dy * scaleY;
+              // Shift arrow origin; keep all other points' absolute positions the same.
+              const shiftX = newStartX - startX;
+              const shiftY = newStartY - startY;
+              arrow.x += shiftX;
+              arrow.y += shiftY;
+              // Adjust all subsequent points to compensate (they're relative to arrow.x,y).
+              for (let i = 1; i < arrow.points.length; i++) {
+                arrow.points[i] = [arrow.points[i][0] - shiftX, arrow.points[i][1] - shiftY];
+              }
+            }
+          }
+
+          // Adjust end point if bound to an expanded container.
+          if (endBound && expandedIds.has(endBound.elementId)) {
+            const container = byId.get(endBound.elementId);
+            const ob = originalBounds.get(endBound.elementId);
+            if (container && ob) {
+              const oldCx = ob.x + ob.width / 2;
+              const oldCy = ob.y + ob.height / 2;
+              const lastIdx = arrow.points.length - 1;
+              // Arrow end absolute position.
+              const endX = arrow.x + arrow.points[lastIdx][0];
+              const endY = arrow.y + arrow.points[lastIdx][1];
+              // Vector from old center to old end point.
+              const dx = endX - oldCx;
+              const dy = endY - oldCy;
+              // Scale by ratio of new to old dimensions.
+              const scaleX = ob.width > 0 ? container.width / ob.width : 1;
+              const scaleY = ob.height > 0 ? container.height / ob.height : 1;
+              const newEndX = oldCx + dx * scaleX;
+              const newEndY = oldCy + dy * scaleY;
+              // Update last point (relative to arrow.x, arrow.y).
+              arrow.points[lastIdx] = [
+                newEndX - arrow.x,
+                newEndY - arrow.y
+              ];
+            }
+          }
+
+          // Update arrow's width/height to match new points extent.
+          if ((startBound && expandedIds.has(startBound.elementId)) ||
+              (endBound && expandedIds.has(endBound.elementId))) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const [px, py] of arrow.points) {
+              minX = Math.min(minX, px);
+              minY = Math.min(minY, py);
+              maxX = Math.max(maxX, px);
+              maxY = Math.max(maxY, py);
+            }
+            arrow.width = maxX - minX;
+            arrow.height = maxY - minY;
+          }
+        }
+      }
+
       // --- Phase 2: Cascading containment ---
       // If an inner element was expanded and now exceeds an outer element that
       // previously contained it, expand the outer element to re-contain it.
