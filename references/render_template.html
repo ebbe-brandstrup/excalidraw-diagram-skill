@@ -64,12 +64,17 @@
         if (!container || container.isDeleted) continue;
         if (!["rectangle", "diamond", "ellipse"].includes(container.type)) continue;
 
-        // Find the rendered text node in the SVG by element ID.
-        const svgTextGroup = svg.querySelector(`[id="${textEl.id}"]`);
-        if (!svgTextGroup) continue;
+        // Find the rendered text node in the SVG by matching text content.
+        // Excalidraw's exportToSvg does NOT set element IDs on SVG nodes,
+        // so we match by textContent instead.
+        const svgTextNodes = [...svg.querySelectorAll('text')];
+        const svgTextNode = svgTextNodes.find(t => t.textContent === textEl.text);
+        if (!svgTextNode) continue;
 
-        // Measure actual rendered text bounds.
-        const textRect = svgTextGroup.getBoundingClientRect();
+        // Measure actual rendered text bounds (use the parent <g> for full bounds
+        // in case the text has multiple tspan children).
+        const measureTarget = svgTextNode.parentElement?.tagName === 'g' ? svgTextNode.parentElement : svgTextNode;
+        const textRect = measureTarget.getBoundingClientRect();
         if (textRect.width === 0 && textRect.height === 0) continue;
 
         // Convert pixel bounds to SVG coordinate space.
