@@ -153,6 +153,16 @@ def render(
             browser.close()
             sys.exit(1)
 
+        # Write back corrected elements if overflow auto-correction was applied.
+        corrected_elements = result.get("correctedElements")
+        if corrected_elements is not None:
+            data["elements"] = corrected_elements
+            excalidraw_path.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            print(f"Auto-corrected text overflow in {excalidraw_path}", file=sys.stderr)
+
         # Wait for render completion signal
         page.wait_for_function("window.__renderComplete === true", timeout=15000)
 
